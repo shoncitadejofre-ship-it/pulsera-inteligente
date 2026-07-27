@@ -102,6 +102,7 @@ app.use(express.static('public'));
 // Crear carpeta de logs si no existe (solo para capturas, opcional)
 const logsDir = path.join(__dirname, 'logs');
 const screenshotsDir = path.join(__dirname, 'logs', 'screenshots');
+const visitsFile = path.join(logsDir, 'visits.json');
 
 if (!fs.existsSync(logsDir)) {
     fs.mkdirSync(logsDir, { recursive: true });
@@ -109,8 +110,11 @@ if (!fs.existsSync(logsDir)) {
 if (!fs.existsSync(screenshotsDir)) {
     fs.mkdirSync(screenshotsDir, { recursive: true });
 }
+if (!fs.existsSync(visitsFile)) {
+    fs.writeFileSync(visitsFile, JSON.stringify([], null, 2));
+}
 
-console.log('✅ Sistema inicializado - Modo solo EMAIL');
+console.log('✅ Sistema inicializado - Modo EMAIL + Dashboard web');
 
 // Función para obtener la IP real del visitante
 function getClientIP(req) {
@@ -207,6 +211,33 @@ app.post('/api/log-visit', async (req, res) => {
         screenshot_file: screenshotFilename
     };
 
+    // Guardar también en archivo JSON para el dashboard
+    try {
+        let visits = [];
+        if (fs.existsSync(visitsFile)) {
+            const data = fs.readFileSync(visitsFile, 'utf8');
+            visits = JSON.parse(data);
+        }
+
+        const visitRecord = {
+            id: visits.length + 1,
+            timestamp: visitData.timestamp,
+            ip: visitData.ip,
+            latitude: visitData.latitude,
+            longitude: visitData.longitude,
+            accuracy: visitData.accuracy,
+            location_method: visitData.location_method,
+            user_agent: visitData.user_agent,
+            screenshot_file: visitData.screenshot_file,
+            created_at: new Date().toISOString()
+        };
+
+        visits.push(visitRecord);
+        fs.writeFileSync(visitsFile, JSON.stringify(visits, null, 2));
+    } catch (error) {
+        console.error('Error guardando registro local:', error);
+    }
+
     // Enviar email inmediatamente
     try {
         const emailSent = await sendLocationEmail(visitData);
@@ -261,10 +292,11 @@ app.use('/screenshots', express.static(screenshotsDir));
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  📍 Pulsera Inteligente - MODO EMAIL                  ║
+║  📍 Pulsera Inteligente - EMAIL + Dashboard Web      ║
 ╚════════════════════════════════════════════════════════╝
 
 📱 Link de la pulsera: http://localhost:${PORT}
+📊 Dashboard web: http://localhost:${PORT}/dashboard
 📧 Notificaciones a: ${EMAIL_TO}
 
 ⚠️  Para desplegar en Render:
@@ -273,8 +305,8 @@ app.listen(PORT, '0.0.0.0', () => {
     - EMAIL_PASS: contraseña-de-aplicacion-gmail
 
 💡 Cada vez que alguien abre el link:
-    ✅ Captura ubicación GPS
+    ✅ Captura ubicación GPS (o por IP si no hay permisos)
     ✅ Envía email automático
-    ✅ NO guarda en base de datos
+    ✅ Guarda en dashboard web para consulta
     `);
 });

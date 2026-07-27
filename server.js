@@ -133,24 +133,59 @@ app.get('/', (req, res) => {
 // Función para obtener ubicación aproximada por IP (sin permisos)
 async function getLocationByIP(ip) {
     try {
-        // Usar servicio gratuito de geolocalización por IP
-        const response = await fetch(`http://ip-api.com/json/${ip}`);
-        const data = await response.json();
+        // Importar https dinámicamente
+        const https = require('https');
         
-        if (data.status === 'success') {
-            return {
-                latitude: data.lat,
-                longitude: data.lon,
-                city: data.city,
-                country: data.country,
-                accuracy: 'Aproximada (por IP)',
-                method: 'IP'
-            };
-        }
+        return new Promise((resolve, reject) => {
+            // Limpiar IP si es IPv6 localhost
+            const cleanIp = ip.replace(/^::ffff:/, '');
+            
+            // No intentar geolocalizar IPs locales
+            if (cleanIp === '127.0.0.1' || cleanIp === '::1' || cleanIp.startsWith('192.168.') || cleanIp.startsWith('10.')) {
+                console.log('⚠️ IP local detectada, no se puede geolocalizar');
+                resolve(null);
+                return;
+            }
+
+            const url = `https://ipapi.co/${cleanIp}/json/`;
+            
+            https.get(url, (res) => {
+                let data = '';
+                
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    try {
+                        const result = JSON.parse(data);
+                        
+                        if (result.latitude && result.longitude) {
+                            resolve({
+                                latitude: result.latitude,
+                                longitude: result.longitude,
+                                city: result.city,
+                                country: result.country_name,
+                                accuracy: `Aproximada (${result.city}, ${result.country_name})`,
+                                method: 'IP'
+                            });
+                        } else {
+                            resolve(null);
+                        }
+                    } catch (error) {
+                        console.error('Error parseando respuesta:', error);
+                        resolve(null);
+                    }
+                });
+            }).on('error', (error) => {
+                console.error('Error obteniendo ubicación por IP:', error);
+                resolve(null);
+            });
+        });
     } catch (error) {
-        console.error('Error obteniendo ubicación por IP:', error);
+        console.error('Error en getLocationByIP:', error);
+        return null;
     }
-    return null;
 }
 
 // Ruta para registrar la visita con geolocalización

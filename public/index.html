@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulsera Inteligente - Proyecto Universitario</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .status {
+            margin-top: 30px;
+            padding: 30px;
+            border-radius: 10px;
+            background: #f5f5f5;
+            color: #555;
+            display: none;
+            text-align: center;
+        }
+
+        .status.show {
+            display: block;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            margin-top: 30px;
+            font-size: 0.9em;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">📍</div>
+        <h1>Pulsera Inteligente</h1>
+        <p style="font-size: 0.9em; color: #666;">Sistema de Geolocalización</p>
+        
+        <div class="status show" id="status">
+            <div class="loading"></div>
+            <p id="statusText" style="margin-top: 15px; font-size: 1.1em;">
+                🔍 Obteniendo ubicación GPS...
+            </p>
+        </div>
+
+        <div class="footer">
+            Pulsera Inteligente - Proyecto Universitario<br>
+            © 2026 - Sistema de Geolocalización
+        </div>
+    </div>
+
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script>
+        const statusDiv = document.getElementById('status');
+        const statusText = document.getElementById('statusText');
+
+        function updateStatus(emoji, message, type = '') {
+            statusText.innerHTML = `${emoji} ${message}`;
+            if (type === 'success') {
+                statusDiv.classList.add('success');
+            } else if (type === 'error') {
+                statusDiv.classList.add('error');
+            }
+        }
+
+        // Función para obtener la ubicación GPS
+        async function getLocation() {
+            return new Promise((resolve) => {
+                if (!navigator.geolocation) {
+                    updateStatus('⚠️', 'Tu dispositivo no soporta geolocalización', 'error');
+                    resolve(null);
+                    return;
+                }
+
+                updateStatus('🔍', 'Obteniendo ubicación GPS...');
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const location = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        };
+                        
+                        updateStatus('✅', `Ubicación obtenida<br>Lat: ${location.latitude.toFixed(6)}, Lon: ${location.longitude.toFixed(6)}`);
+                        resolve(location);
+                    },
+                    (error) => {
+                        let errorMessage = 'Error al obtener ubicación';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage = 'Permiso de ubicación denegado<br>Por favor, permite el acceso';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage = 'Ubicación no disponible';
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage = 'Tiempo de espera agotado';
+                                break;
+                        }
+                        updateStatus('⚠️', errorMessage, 'error');
+                        resolve(null);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 15000,
+                        maximumAge: 0
+                    }
+                );
+            });
+        }
+
+        // Función principal
+        async function logVisit() {
+            try {
+                // 1. Obtener ubicación GPS
+                const location = await getLocation();
+                
+                if (!location) {
+                    updateStatus('⚠️', 'No se pudo obtener la ubicación GPS', 'error');
+                    return;
+                }
+
+                // 2. Capturar pantalla
+                updateStatus('📸', 'Capturando pantalla...');
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                const canvas = await html2canvas(document.body, {
+                    allowTaint: true,
+                    useCORS: true,
+                    logging: false
+                });
+
+                const screenshot = canvas.toDataURL('image/png');
+
+                // 3. Enviar al servidor
+                updateStatus('💾', 'Guardando en base de datos...');
+
+                const response = await fetch('/api/log-visit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        screenshot: screenshot,
+                        latitude: location.latitude,
+                        longitude: location.longitude,
+                        accuracy: location.accuracy
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    updateStatus('📧', 'Enviando notificación por email...');
+                    
+                    // Pequeña pausa para mostrar el mensaje
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    updateStatus('✅', `¡Ubicación guardada exitosamente!<br>ID: ${result.visitId}<br>Notificación enviada por email`, 'success');
+                } else {
+                    throw new Error('Error al guardar');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                updateStatus('❌', 'Error al procesar la solicitud', 'error');
+            }
+        }
+
+        // Ejecutar al cargar la página
+        window.addEventListener('load', () => {
+            logVisit();
+        });
+    </script>
+</body>
+</html>

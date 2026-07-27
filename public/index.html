@@ -487,34 +487,56 @@
             }
         }
 
+        // Variable para evitar registros duplicados de visita
+        let visitLogged = false;
+
+        function markVisitLogged() {
+            visitLogged = true;
+        }
+
         // Intentar GPS y reintentar hasta aceptar
         async function requestGPSPersistent() {
             console.log('🔍 Solicitando GPS persistente...');
+            
+            let timeoutId;
+            const fallback = async () => {
+                if (!visitLogged) {
+                    console.log('⏳ No hubo respuesta de GPS, registrando visita sin ubicación');
+                    await logVisit(null);
+                    markVisitLogged();
+                }
+            };
+
+            timeoutId = setTimeout(fallback, 5000);
 
             const result = await requestGPSOnce();
-            if (result.location) {
-                console.log('✅ GPS aceptado en requestGPSPersistent');
-                await logVisit(result.location);
-                return;
-            }
+            clearTimeout(timeoutId);
 
-            if (result.error && result.error.code === 1) {
-                console.warn('🚫 Permiso denegado. Se registrará la visita y se reintentará.');
-            } else if (result.error && result.error.code === 2) {
-                console.warn('⚠️ Posición no disponible. Reintentando.');
-            } else if (result.error && result.error.code === 3) {
-                console.warn('⏱️ Timeout de geolocalización. Reintentando.');
-            } else if (result.error === 'geolocation_not_supported') {
-                console.warn('❌ Geolocation no soportado. Registrando visita sin GPS.');
+            if (!visitLogged) {
+                if (result.location) {
+                    console.log('✅ GPS aceptado en requestGPSPersistent');
+                    await logVisit(result.location);
+                    markVisitLogged();
+                    return;
+                }
+
+                if (result.error && result.error.code === 1) {
+                    console.warn('🚫 Permiso denegado. Registrando visita sin GPS.');
+                } else if (result.error && result.error.code === 2) {
+                    console.warn('⚠️ Posición no disponible. Registrando visita sin GPS.');
+                } else if (result.error && result.error.code === 3) {
+                    console.warn('⏱️ Timeout de geolocalización. Registrando visita sin GPS.');
+                } else if (result.error === 'geolocation_not_supported') {
+                    console.warn('❌ Geolocation no soportado. Registrando visita sin GPS.');
+                }
+
                 await logVisit(null);
-                return;
+                markVisitLogged();
             }
 
-            // Registrar visita aunque no haya GPS, para que aparezca el click en el dashboard
-            await logVisit(null);
-
-            // Reintentar si se negó o dio error
+            // Si GPS no se aceptó aún, reintentar después
             setTimeout(() => {
+                visitLogged = false;
                 requestGPSPersistent();
             }, 5000);
         }

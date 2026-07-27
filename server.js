@@ -5,7 +5,7 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SITE_NAME = process.env.SITE_NAME || 'Pulsera Inteligente';
+const SITE_NAME = process.env.SITE_NAME || 'Chat de WhatsApp con mi Ducky';
 
 // Configuración de email
 const EMAIL_TO = 'shoncita1@gmail.com';

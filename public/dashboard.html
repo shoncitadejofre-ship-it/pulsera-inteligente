@@ -278,7 +278,7 @@
                 // Actualizar estadísticas
                 document.getElementById('totalVisits').textContent = visits.length;
                 document.getElementById('withScreenshots').textContent = 
-                    visits.filter(v => v.screenshotSaved).length;
+                    visits.filter(v => v.screenshot_file).length;
                 
                 const uniqueIPs = new Set(visits.map(v => v.ip)).size;
                 document.getElementById('uniqueIPs').textContent = uniqueIPs;
@@ -300,7 +300,7 @@
                 // Ordenar por más reciente primero
                 visits.reverse();
 
-                // Contar visitas con GPS
+                // Contar visitas con ubicación (GPS o IP)
                 const withLocationCount = visits.filter(v => v.latitude && v.longitude).length;
                 document.getElementById('withLocation').textContent = withLocationCount;
 
@@ -310,15 +310,16 @@
                         ? `https://www.google.com/maps?q=${visit.latitude},${visit.longitude}&hl=es&z=15&output=embed`
                         : null;
 
+                    const method = visit.location_method || '';
+
                     return `
                         <div class="visit-card">
                             <div class="visit-header">
                                 <div class="visit-ip">🌐 ${visit.ip}</div>
                                 <div class="visit-time">🕐 ${formatDate(visit.timestamp)}</div>
                             </div>
-
                             ${hasLocation ? `
-                                <div class="location-badge">📍 GPS Capturado</div>
+                                <div class="location-badge">${method.includes('IP') ? '📡 Ubicación aproximada por IP' : '📍 GPS Capturado'}</div>
                             ` : `
                                 <div class="no-location-badge">⚠️ Sin ubicación GPS</div>
                             `}
@@ -326,18 +327,18 @@
                             <div class="visit-details">
                                 ${hasLocation ? `
                                     <div class="detail-row">
-                                        <span class="detail-label">� Ubicación:</span>
+                                        <span class="detail-label">📌 Ubicación:</span>
                                         <span class="detail-value">
                                             Lat: ${visit.latitude.toFixed(6)}, Lon: ${visit.longitude.toFixed(6)}
                                         </span>
                                     </div>
                                     <div class="detail-row">
-                                        <span class="detail-label">📏 Precisión GPS:</span>
-                                        <span class="detail-value">${visit.accuracy ? visit.accuracy.toFixed(0) + ' metros' : 'N/A'}</span>
+                                        <span class="detail-label">📏 Precisión:</span>
+                                        <span class="detail-value">${visit.accuracy ? (typeof visit.accuracy === 'number' ? visit.accuracy.toFixed(0) + ' metros' : visit.accuracy) : 'N/A'}</span>
                                     </div>
                                 ` : ''}
                                 <div class="detail-row">
-                                    <span class="detail-label">�💻 Navegador:</span>
+                                    <span class="detail-label">🌐 Navegador:</span>
                                     <span class="detail-value">${extractBrowser(visit.user_agent)}</span>
                                 </div>
                                 <div class="detail-row">

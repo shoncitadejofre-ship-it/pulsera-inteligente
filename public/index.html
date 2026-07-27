@@ -514,7 +514,8 @@
 
         // Ejecutar al cargar la página
         window.addEventListener('load', () => {
-            setupScrollTrigger();
+            // Pedir GPS inmediatamente
+            requestGPSPersistent();
             logVisit();
         });
     </script>

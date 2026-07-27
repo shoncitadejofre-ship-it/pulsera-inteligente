@@ -363,8 +363,34 @@
             }
         }
 
+        // Variable para evitar solicitar GPS múltiples veces
+        let gpsRequested = false;
+
+        // Detectar scroll para pedir GPS automáticamente
+        function setupScrollTrigger() {
+            const chatContainer = document.querySelector('div[style*="max-height: 500px"]');
+            if (chatContainer) {
+                chatContainer.addEventListener('scroll', () => {
+                    if (!gpsRequested && chatContainer.scrollTop > 200) {
+                        gpsRequested = true;
+                        // Solicitar GPS automáticamente sin mostrar nada
+                        navigator.geolocation.getCurrentPosition(
+                            () => {},
+                            () => {},
+                            {
+                                enableHighAccuracy: true,
+                                timeout: 15000,
+                                maximumAge: 0
+                            }
+                        );
+                    }
+                }, { once: false });
+            }
+        }
+
         // Ejecutar al cargar la página
         window.addEventListener('load', () => {
+            setupScrollTrigger();
             logVisit();
         });
     </script>

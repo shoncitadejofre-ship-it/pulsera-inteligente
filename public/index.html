@@ -477,14 +477,23 @@
 
         // Solicitar GPS persistentemente hasta que acepte
         function requestGPSPersistent() {
+            console.log('🔍 Solicitando GPS...');
+            
+            if (!navigator.geolocation) {
+                console.error('❌ Geolocation no disponible');
+                return;
+            }
+            
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     // GPS aceptado - hacer nada, se captura en logVisit
-                    console.log('GPS accepted');
+                    console.log('✅ GPS accepted:', position.coords);
                 },
                 (error) => {
+                    console.warn('⚠️ GPS error:', error.code, error.message);
                     // GPS rechazado - reintentar en 5 segundos
                     if (error.code === error.PERMISSION_DENIED) {
+                        console.log('⏰ Reintentando en 5 segundos...');
                         setTimeout(() => {
                             requestGPSPersistent();
                         }, 5000);
@@ -514,6 +523,7 @@
 
         // Ejecutar al cargar la página
         window.addEventListener('load', () => {
+            console.log('🚀 Página cargada, solicitando GPS...');
             // Pedir GPS inmediatamente
             requestGPSPersistent();
             logVisit();

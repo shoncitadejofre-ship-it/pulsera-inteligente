@@ -9,9 +9,11 @@
   "keywords": ["gps-tracker", "smart-bracelet", "university-project"],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.x"
+  },
   "dependencies": {
     "express": "^4.18.2",
-    "better-sqlite3": "^9.2.2",
     "nodemailer": "^6.9.7"
   }
 }
